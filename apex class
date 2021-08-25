@@ -1,93 +1,124 @@
-//the projected hours amount is the based on a burn rate assumption
+public class Forecast {
+	/**
+	* Gets the weighted percentage based on what percentage of the time the day falls on
+	*
+	* @param dayPercent The percentage of the span the day falls on
+	* @param dayHours The number of hours allocated
+	* @return The weighted number of hours
+	
+	the projected hours amount is the based on a burn rate assumption
                         //First Q: Date <= 25% of total = +10%
 			//Second Q: Date <= 25% of total = -10%
                         //Third Q: Date <= 25% of total = -10%
                         //Fourth Q: Date <= 25% of total = +10%
+	*/
+	@TestVisible
+	private static Decimal getWeightedPercentage(Decimal dayPercent, Decimal dayHours) {
+		if (
+			dayPercent <= 0 ||
+			dayPercent >= 1
+		) {
+			return 0;
+		}
 
+		Decimal multiplier = 1.10;
 
+		if (
+			dayPercent >= 0.25 &&
+			dayPercent < 0.5
+		) {
+			multiplier = 0.90;
+		}
 
+		return dayHours * multiplier;
+	}
 
-public class Forecast {
+	/**
+	* Gets all of the applicable budget detail records
+	*
+	* @param ids The ids to fetch
+	* @return The budget detail records
+	*/
+	@TestVisible
+	private static List<Budget_Detail__c> getBudgetDetailsForId(Set<Id> ids) {
+		return [
+			select Budget__c,
+				Budget__r.Period_of_Performance_Start__c,
+				Budget__r.Period_of_Performance_End__c,
+				Role__c,
+				Total_per_role__c,
+				Total_Value__c
+			from Budget_Detail__c
+			where Id in :ids
+		];
+	}
+
+	/**
+	* Gets the key for the day map based on the date
+	*
+	* @param d The date to generate a key from
+	* @return The key
+	*/
+	@TestVisible
+	private static String getDayMapKey(Date d) {
+		Datetime dt = d;
+		return dt.format('yyyy-MM-dd');
+	}
+
+	/**
+	* Creates forcast records for a list of budget detail ids
+	*
+	* @param staffList The list of ids
+	*/
 	@future
-    public static void createForecast (list <Id> staffList) {
-        
-        set <Id> staffSet = new set <Id>(staffList);
-        
-        list <forecast__c> forecastInsert = new list <forecast__c>();
-        
-        //for each budget detail, we'll create a forecast that spreads the total value across the budget timeline. 
-        //The end result is a list of forecast months for each budget detail
-        
-        for (budget_detail__c bs :[SELECT 
-                                  Id, 
-                                  Budget__c,
-                                  Budget__r.Period_of_Performance_Start__c,
-                                  Budget__r.Period_of_Performance_End__c,
-                                  Role__c,
-                                  Total_per_role__c,
-                                  Total_Value__c
-                                  FROM budget_detail__c
-                                  WHERE Id IN : staffSet]) {
-                                      
+    public static void createForecast (List<Id> staffList) {
+        List <Forecast__c> forecastInsert = new List<Forecast__c>();
+
+        for (Budget_Detail__c bs : getBudgetDetailsForId(new Set<Id>(staffList))) {
             Date startDate = bs.Budget__r.Period_of_Performance_Start__c;
-            Date offsetStart = bs.Budget__r.Period_of_Performance_Start__c.toStartOfMonth();                          
+            Date offsetStart = startDate.toStartOfMonth();
             Date endDate = bs.Budget__r.Period_of_Performance_End__c;
-            Date offsetEnd = bs.Budget__r.Period_of_Performance_End__c.addMonths(1).toStartOfMonth().addDays(-1);
-						integer offsetDiff = offsetStart.daysBetween(startDate);                                    
-            integer months = offsetStart.monthsBetween(offsetEnd)+1;
-            integer budgetDays = startDate.daysBetween(endDate)+1;
-            integer days = offsetStart.daysBetween(offsetEnd)+1;
+            Date offsetEnd = endDate.addMonths(1).toStartOfMonth().addDays(-1);
+
+			Integer offsetDiff = offsetStart.daysBetween(startDate);
+            Integer budgetDays = startDate.daysBetween(endDate) + 1;
+            Integer days = offsetStart.daysBetween(offsetEnd) + 1;
+
             Decimal dayHours = (bs.Total_per_role__c / budgetDays).setScale(3);
-                                               
-            map <date, decimal> dayMap = new map <date, decimal>();
 
-                for (integer i = 0; i <= days; i++) {
-                    
-                    decimal iDecimal = decimal.valueOf(i);
-                    decimal ioffsetDiff = decimal.valueOf(offsetDiff);
-                    decimal dayPercent = ((iDecimal-ioffsetDiff) / budgetDays).setScale(3);
-                    
-                    if ( dayPercent < 0 ) {
-                        		dayMap.put(offsetStart.addDays(i),0);
-                            } else if (dayPercent < 0.25 ) {
-                                dayMap.put(offsetStart.addDays(i),dayHours *1.10);
-                            } else if (dayPercent < 0.5 ) {
-                                dayMap.put(offsetStart.addDays(i),dayHours*0.90);
-                            } else if (dayPercent < 0.75 ) {
-                                dayMap.put(offsetStart.addDays(i),dayHours*0.90);
-                            } else if (dayPercent < 1 ) {
-                                dayMap.put(offsetStart.addDays(i),dayHours*1.10);
-                            } else { dayMap.put(offsetStart.addDays(i),0);
-                            }
-                system.debug('dayPercent = '+dayPercent + ' and current day = ' +offsetStart.addDays(i));    
-                } //end of day loop
-                                  
-                                      for (integer m = 0; m < months; m++) {
-                                          forecast__c f = new forecast__c();
-            							  f.Budget_Detail__c = bs.Id; 
-            							  f.Date__c = offsetStart.addMonths(m);
- 										  f.Projected_Hours__c = 0;
-                                          integer monthNumber = f.Date__c.Month();
-                						  integer yearNumber = f.Date__c.Year();
-                						  integer monthDays = date.daysInMonth(yearNumber, monthNumber);
-                                              
-                                          for (integer a = 0; a < monthDays; a++) {
-                                            integer aYear = f.Date__c.addDays(a).year(); 
-                                            integer aMonth = f.Date__c.addDays(a).month();
-                                            integer aDay = f.Date__c.addDays(a).day();
-                                            date aDate = Date.newInstance(aYear, aMonth, aDay);  
-                                          	
-                                            f.Projected_Hours__c += dayMap.get(aDate);
-                                            system.debug('the current date in the loop is: '+f.Date__c.addDays(a));
-                                            system.debug('the current value of the forecast is '+dayMap.get(aDate));
-                                              
-                                          } forecastInsert.add(f);  //end of days in month loop
-                                      } //end of months loop              
-                                  
-           } //end of budget detail loop
+            Map<String, Decimal> dayMap = new Map<String, Decimal>();
 
-			insert(forecastInsert);
-        
-    } //end of method
-    
-} // end of class
+			for (Integer i = 0; i <= days; i += 1) {
+				Decimal iDecimal = Decimal.valueOf(i);
+				Decimal ioffsetDiff = Decimal.valueOf(offsetDiff);
+				Decimal dayPercent = ((iDecimal - ioffsetDiff) / budgetDays).setScale(3);
+				String key = getDayMapKey(offsetStart.addDays(i));
+
+				dayMap.put(key, getWeightedPercentage(dayPercent, dayHours));
+			}
+
+			Integer months = offsetStart.monthsBetween(offsetEnd) + 1;
+			for (Integer m = 0; m < months; m += 1) {
+				Date forecastDate = offsetStart.addMonths(m);
+				Decimal projectedHours = 0;
+
+				Integer monthNumber = forecastDate.month();
+				Integer yearNumber = forecastDate.year();
+				Integer monthDays = Date.daysInMonth(yearNumber, monthNumber);
+
+				for (Integer a = 0; a < monthDays; a += 1) {
+					String key = getDayMapKey(forecastDate.addDays(a));
+					projectedHours += dayMap.get(key);
+				}
+
+				forecastInsert.add(new Forecast__c(
+					Budget_Detail__c = bs.Id,
+					Date__c = forecastDate,
+					Projected_Hours__c = projectedHours
+				});
+			}
+		}
+
+		insert forecastInsert;
+    }
+}
