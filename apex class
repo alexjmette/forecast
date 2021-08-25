@@ -1,8 +1,10 @@
 //the projected hours amount is the based on a burn rate assumption
                         //First Q: Date <= 25% of total = +10%
-						//Second Q: Date <= 25% of total = -10%
+			//Second Q: Date <= 25% of total = -10%
                         //Third Q: Date <= 25% of total = -10%
                         //Fourth Q: Date <= 25% of total = +10%
+
+
 
 
 public class Forecast {
