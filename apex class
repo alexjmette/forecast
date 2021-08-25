@@ -5,6 +5,12 @@ public class Forecast {
 	* @param dayPercent The percentage of the span the day falls on
 	* @param dayHours The number of hours allocated
 	* @return The weighted number of hours
+	
+	the projected hours amount is the based on a burn rate assumption
+                        //First Q: Date <= 25% of total = +10%
+			//Second Q: Date <= 25% of total = -10%
+                        //Third Q: Date <= 25% of total = -10%
+                        //Fourth Q: Date <= 25% of total = +10%
 	*/
 	@TestVisible
 	private static Decimal getWeightedPercentage(Decimal dayPercent, Decimal dayHours) {
